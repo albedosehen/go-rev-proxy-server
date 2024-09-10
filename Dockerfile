@@ -1,7 +1,7 @@
 # Build step
-FROM golang:1.22-3-alpine AS builder
+FROM golang:1.22.3-alpine AS builder
 
-WORKDIR /app
+WORKDIR /bin
 
 COPY . .
 
@@ -11,11 +11,12 @@ RUN go build -o server .
 
 FROM alpine:latest
 
-# Run step
-WORKDIR /root/
+WORKDIR /app/
 
-COPY --from=builder /app/server .
+COPY --from=builder /bin/server .
 
-EXPOSE 2020
+EXPOSE 2080
+
+EXPOSE 4043
 
 CMD ["./server"]

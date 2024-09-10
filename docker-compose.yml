@@ -6,6 +6,10 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "2020:2020" 
+      - "2080:80"
+      - "4043:443"
     container_name: go-proxy-server-container
-    restart: always
+    volumes:
+      - ./certs:/app/certs
+      - ./.env:/app/.env
+    restart: unless-stopped

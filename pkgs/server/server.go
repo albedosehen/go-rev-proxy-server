@@ -8,26 +8,32 @@ import (
 	"os"
 	"strings"
 
-	"github.com/joho/godotenv"
 	"golang.org/x/crypto/acme/autocert"
 )
 
-var DOMAINS = strings.Split(os.Getenv("DOMAINS"), ",")
-var BACKENDS = make(map[string]string)
+var (
+	DOMAINS  []string
+	BACKENDS = make(map[string]string)
+)
 
 func Init() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
-	if len(BACKENDS) != 0 {
+	if len(DOMAINS) > 0 && len(BACKENDS) > 0 {
+		// Domains and backends are already initialized
 		return
 	}
 
+	domainsEnv := os.Getenv("DOMAINS")
+	if domainsEnv == "" {
+		log.Fatal("DOMAINS environment variable is not set")
+	}
+
+	// Populate DOMAINS slice
+	DOMAINS = strings.Split(domainsEnv, ",")
+
+	// Populate BACKENDS map
 	for _, domain := range DOMAINS {
 		subdomain := strings.Split(domain, ".")[0]
-		envVarKey := strings.ToUpper(subdomain) + "_BACKEND"
+		envVarKey := strings.ToUpper(subdomain) + "_BACKEND" // e.g www.example.com is the domain, then the environment variable should be WWW_BACKEND
 
 		backendURL := os.Getenv(envVarKey)
 		if backendURL == "" {
@@ -52,7 +58,22 @@ func ExtractBackendUrl(host string) (*url.URL, error) {
 	return nil, fmt.Errorf("backend URL for host %s not found", host)
 }
 
-func StartServer(useHTTPRedirect bool) {
+func StartHttpServerInBackground(useStandardHTTPChallengeHandling bool, certManager *autocert.Manager) {
+	if useStandardHTTPChallengeHandling {
+		go func() {
+			log.Fatal(http.ListenAndServe(":80", certManager.HTTPHandler(nil)))
+		}()
+	} else {
+		go func() {
+			log.Fatal(http.ListenAndServe(":80", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
+			})))
+		}()
+	}
+}
+
+func StartServer(useStandardHTTPChallengeHandling bool) {
+	// TODO: This will be a required manual call with optional parameters to initialize the server configuration in the future
 	Init()
 
 	mux := http.NewServeMux()
@@ -65,18 +86,7 @@ func StartServer(useHTTPRedirect bool) {
 		Cache:      autocert.DirCache(os.Getenv("CERT_CACHE_DIR")), // Use the certificate cache directory from the .env file
 	}
 
-	// HTTP server for Let's Encrypt challenge on port 80
-	if useHTTPRedirect {
-		go func() {
-			log.Fatal(http.ListenAndServe(":80", certManager.HTTPHandler(nil)))
-		}()
-	} else {
-		go func() {
-			log.Fatal(http.ListenAndServe(":80", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
-			})))
-		}()
-	}
+	StartHttpServerInBackground(useStandardHTTPChallengeHandling, &certManager)
 
 	// HTTPS server using Let's Encrypt certificates
 	server := &http.Server{

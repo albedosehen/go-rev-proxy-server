@@ -1,5 +1,5 @@
 bin
 *.appsettings.json
 *.settings.json
-env
+.env
 certs/*
